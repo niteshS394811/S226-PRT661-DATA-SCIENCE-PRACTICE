@@ -1,0 +1,7 @@
+.git
+.venv
+__pycache__
+*.pyc
+.env
+src/data/raw_cache
+src/data/processed

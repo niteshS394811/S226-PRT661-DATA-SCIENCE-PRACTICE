@@ -1,0 +1,11 @@
+.env
+
+__pycache__/
+*.pyc
+
+src/data/raw_cache/*
+src/data/processed/*
+
+logs/
+
+.airflow/

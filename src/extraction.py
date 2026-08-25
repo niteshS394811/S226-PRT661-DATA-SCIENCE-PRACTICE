@@ -1,7 +1,10 @@
+import csv
+import glob
 import os
-import sys
+
 import pandas as pd
 from nemosis import dynamic_data_compiler
+from nemosis.custom_errors import NoDataToReturn
 
 
 ########### Gets the exact folder path where this script (ass.py) is located #######33
@@ -23,17 +26,77 @@ END_DATE = "2025/01/07 00:00:00"  # 1 week test range
 REGIONS = ["NSW1", "QLD1", "VIC1", "SA1", "TAS1"]
 
 
+def read_archive_cache(
+    table_name: str,
+    start: str,
+    end: str,
+    columns: list[str],
+) -> pd.DataFrame:
+    rows = []
+    header = None
+
+    pattern = os.path.join(
+        CACHE_DIR,
+        f"PUBLIC_ARCHIVE#{table_name}#FILE01#*.CSV",
+    )
+    for filepath in glob.glob(pattern):
+        with open(filepath, newline="", encoding="utf-8-sig") as file:
+            for row in csv.reader(file):
+                if row and row[0] == "I" and header is None:
+                    header = row[4:]
+                elif row and row[0] == "D":
+                    rows.append(row[4:])
+
+    if header is None or not rows:
+        raise NoDataToReturn(
+            f"No cached {table_name} archive files found in {CACHE_DIR}"
+        )
+
+    cached = pd.DataFrame(rows, columns=header)
+    cached["SETTLEMENTDATE"] = pd.to_datetime(
+        cached["SETTLEMENTDATE"], errors="coerce"
+    )
+    start_date = pd.Timestamp(start)
+    end_date = pd.Timestamp(end)
+    cached = cached[
+        cached["SETTLEMENTDATE"].between(start_date, end_date)
+        & cached["REGIONID"].isin(REGIONS)
+    ]
+    cached["INTERVENTION"] = pd.to_numeric(
+        cached["INTERVENTION"], errors="coerce"
+    )
+    return cached[columns].copy()
+
+
+def fetch_table(
+    table_name: str,
+    start: str,
+    end: str,
+    columns: list[str],
+) -> pd.DataFrame:
+    try:
+        return dynamic_data_compiler(
+            start_time=start,
+            end_time=end,
+            table_name=table_name,
+            raw_data_location=CACHE_DIR,
+            select_columns=columns,
+            filter_cols=["REGIONID"],
+            filter_values=(REGIONS,),
+        )
+    except NoDataToReturn:
+        print(f"Using local archive cache for {table_name}.")
+        return read_archive_cache(table_name, start, end, columns)
+
+
 def fetch_dispatch_prices(start: str, end: str) -> pd.DataFrame:
     """Fetch 5-minute Regional Reference Price (RRP) data."""
     print("Fetching DISPATCHPRICE table from NEMWEB...")
-    df_price = dynamic_data_compiler(
-        start_time=start,
-        end_time=end,
-        table_name="DISPATCHPRICE",
-        raw_data_location=CACHE_DIR,
-        select_columns=["SETTLEMENTDATE", "REGIONID", "RRP", "INTERVENTION"],
-        filter_cols=["REGIONID"],
-        filter_values=(REGIONS,),
+    df_price = fetch_table(
+        "DISPATCHPRICE",
+        start,
+        end,
+        ["SETTLEMENTDATE", "REGIONID", "RRP", "INTERVENTION"],
     )
     ########## Filter out physical interventions ############
     df_price = df_price[df_price["INTERVENTION"] == 0].drop(
@@ -45,19 +108,16 @@ def fetch_dispatch_prices(start: str, end: str) -> pd.DataFrame:
 def fetch_dispatch_demand(start: str, end: str) -> pd.DataFrame:
     """Fetch 5-minute Total Operational Demand data."""
     print("Fetching DISPATCHREGIONSUM table from NEMWEB...")
-    df_demand = dynamic_data_compiler(
-        start_time=start,
-        end_time=end,
-        table_name="DISPATCHREGIONSUM",
-        raw_data_location=CACHE_DIR,
-        select_columns=[
+    df_demand = fetch_table(
+        "DISPATCHREGIONSUM",
+        start,
+        end,
+        [
             "SETTLEMENTDATE",
             "REGIONID",
             "TOTALDEMAND",
             "INTERVENTION",
         ],
-        filter_cols=["REGIONID"],
-        filter_values=(REGIONS,),
     )
     df_demand = df_demand[df_demand["INTERVENTION"] == 0].drop(
         columns=["INTERVENTION"]

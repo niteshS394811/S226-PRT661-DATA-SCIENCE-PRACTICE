@@ -1,0 +1,5 @@
+CREATE DATABASE nemdb;
+
+CREATE USER nemuser WITH PASSWORD 'nempassword';
+
+GRANT ALL PRIVILEGES ON DATABASE nemdb TO nemuser;

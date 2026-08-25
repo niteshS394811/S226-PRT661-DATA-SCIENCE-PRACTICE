@@ -4,10 +4,10 @@ import pandas as pd
 from nemosis import dynamic_data_compiler
 
 
-########### Gets the exact folder path where this script (ass.py) is located #######33
+########### Gets the exact folder path where this script  is located #######
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-###### Point directly to root 'data/raw_cache' and 'data/processed' #######3
+###### Point directly to root 'data/raw_cache' and 'data/processed' #######
 CACHE_DIR = os.path.join(SCRIPT_DIR, "data", "raw_cache")
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "data", "processed")
 
@@ -15,7 +15,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 ########## Configurations ########
-########### NEMWEB requires YYYY/MM/DD HH:MM:SS format ##############
+########### NEMWEB requires YYYY/MM/DD HH:MM:SS format ###############
 START_DATE = "2025/01/01 00:00:00"
 END_DATE = "2025/01/07 00:00:00"  # 1 week test range
 

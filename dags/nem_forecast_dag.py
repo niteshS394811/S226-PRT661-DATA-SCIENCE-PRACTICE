@@ -1,6 +1,11 @@
 from datetime import datetime
 
-from airflow.sdk import dag, task
+from airflow.sdk import Asset, dag, task
+
+
+nem_market_data = Asset(
+    "postgres://postgres:5432/nemdb/public/nem_market_data"
+)
 
 
 @dag(
@@ -38,6 +43,18 @@ def nem_data_pipeline():
             index=False,
         )
 
+    @task(outlets=[nem_market_data])
+    def load_database():
+        import pandas as pd
+        from src.loading import load_data
+
+        input_file = (
+            "/opt/airflow/src/data/processed/"
+            "nemweb_price_demand_cleaned.csv"
+        )
+        cleaned = pd.read_csv(input_file)
+        load_data(cleaned, "nem_market_data", if_exists="replace")
+
     @task
     def transform():
         import pandas as pd
@@ -58,7 +75,7 @@ def nem_data_pipeline():
             index=False,
         )
 
-    extract() >> clean() >> transform()
+    extract() >> clean() >> load_database() >> transform()
 
 
 nem_data_pipeline()

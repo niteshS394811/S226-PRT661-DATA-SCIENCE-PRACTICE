@@ -115,5 +115,20 @@ services:
       - ./src:/opt/airflow/src
       - ./logs:/opt/airflow/logs
 
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nem_dashboard
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: streamlit run dashboard.py --server.address=0.0.0.0 --server.port=8501
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./src:/app/src
+      - ./dashboard.py:/app/dashboard.py
+
 volumes:
   postgres_data:

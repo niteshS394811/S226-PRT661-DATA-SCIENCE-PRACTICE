@@ -34,13 +34,19 @@ services:
       - -c
       - |
         airflow db migrate
-        airflow users create \
-          --username admin \
-          --password admin \
-          --firstname Airflow \
-          --lastname Admin \
-          --role Admin \
-          --email admin@example.com
+        if airflow users list | grep -q "admin"; then
+          airflow users reset-password \
+            --username admin \
+            --password admin
+        else
+          airflow users create \
+            --username admin \
+            --password admin \
+            --firstname Airflow \
+            --lastname Admin \
+            --role Admin \
+            --email admin@example.com
+        fi
     volumes:
       - ./dags:/opt/airflow/dags
       - ./src:/opt/airflow/src

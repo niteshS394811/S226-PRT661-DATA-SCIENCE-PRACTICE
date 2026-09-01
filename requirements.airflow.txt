@@ -1,6 +1,5 @@
 numpy==2.2.6
 pandas==2.2.3
 nemosis==3.8.1
-sqlalchemy>=2.0
 psycopg[binary]
-streamlit==1.39.0
+apache-airflow-providers-fab

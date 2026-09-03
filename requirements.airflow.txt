@@ -4,6 +4,5 @@ nemosis==3.8.1
 sqlalchemy>=2.0
 psycopg[binary]
 apache-airflow-providers-fab
-streamlit>=1.40.0
 scikit-learn>=1.3
 joblib>=1.3

@@ -1,5 +1,0 @@
-services:
-  app:
-    build: .
-    volumes:
-      - ./src/data:/app/src/data

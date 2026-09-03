@@ -1,0 +1,17 @@
+FROM apache/airflow:3.3.1
+
+USER airflow
+
+COPY requirements.airflow.txt /requirements.txt
+
+RUN pip install --no-cache-dir -r /requirements.txt
+
+USER root
+
+COPY dags /opt/airflow/dags
+COPY src /opt/airflow/src
+
+RUN mkdir -p /opt/airflow/logs \
+	&& chown -R airflow:root /opt/airflow/dags /opt/airflow/src /opt/airflow/logs
+
+USER airflow

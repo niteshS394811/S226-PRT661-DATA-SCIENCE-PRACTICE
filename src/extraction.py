@@ -16,8 +16,8 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 ########## Configurations ########
 ########### NEMWEB requires YYYY/MM/DD HH:MM:SS format ##############
-START_DATE = "2025/01/01 00:00:00"
-END_DATE = "2025/01/07 00:00:00"  # 1 week test range
+START_DATE = "2025/02/01 00:00:00"
+END_DATE = "2025/02/07 00:00:00"  # 1 week test range
 
 ############ Target regions defined in your proposal ###########3
 REGIONS = ["NSW1", "QLD1", "VIC1", "SA1", "TAS1"]

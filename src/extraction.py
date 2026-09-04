@@ -8,28 +8,15 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 from nemosis import dynamic_data_compiler
 
-<<<<<<< HEAD
-
-########### Gets the exact folder path where this script  is located #######
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-###### Point directly to root 'data/raw_cache' and 'data/processed' #######
-=======
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
->>>>>>> b97f18e1b257f1d17e13e61b213bf3453400e166
 CACHE_DIR = os.path.join(SCRIPT_DIR, "data", "raw_cache")
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "data", "processed")
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 ########## Configurations ########
-<<<<<<< HEAD
-########### NEMWEB requires YYYY/MM/DD HH:MM:SS format ###############
-START_DATE = "2025/01/01 00:00:00"
-=======
 ########### NEMWEB requires YYYY/MM/DD HH:MM:SS format ##############
 START_DATE = "2025/01/06 00:00:00"
->>>>>>> b97f18e1b257f1d17e13e61b213bf3453400e166
 END_DATE = "2025/01/07 00:00:00"  # 1 week test range
 
 ############ Target regions defined in your proposal ###########3

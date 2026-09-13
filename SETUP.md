@@ -44,6 +44,7 @@ cd S226-PRT661-DATA-SCIENCE-PRACTICE
 ```
 
 ---
+open docker dektop 
 
 ## 3. Start all services (Docker)
 

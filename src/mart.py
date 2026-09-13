@@ -10,7 +10,8 @@ def build_daily_actuals(panel: pd.DataFrame | None = None) -> pd.DataFrame:
     if panel is None:
         panel = read_sql(
             """
-            SELECT settlementdate, regionid, rrp, totaldemand, netinterchange
+            SELECT settlementdate, regionid, rrp, totaldemand, netinterchange,
+                   demandforecast, aemo_demand_error
             FROM dwh.panel
             """
         )
@@ -19,8 +20,9 @@ def build_daily_actuals(panel: pd.DataFrame | None = None) -> pd.DataFrame:
     df = panel.copy()
     df["settlementdate"] = pd.to_datetime(df["settlementdate"], errors="coerce")
     df["trade_date"] = df["settlementdate"].dt.normalize()
-    if "netinterchange" not in df.columns:
-        df["netinterchange"] = 0.0
+    for c in ("netinterchange", "demandforecast", "aemo_demand_error"):
+        if c not in df.columns:
+            df[c] = pd.NA
     daily = (
         df.groupby(["trade_date", "regionid"], as_index=False)
         .agg(
@@ -31,6 +33,8 @@ def build_daily_actuals(panel: pd.DataFrame | None = None) -> pd.DataFrame:
             max_demand=("totaldemand", "max"),
             min_demand=("totaldemand", "min"),
             avg_netinterchange=("netinterchange", "mean"),
+            avg_demandforecast=("demandforecast", "mean"),
+            avg_aemo_demand_error=("aemo_demand_error", "mean"),
             intervals=("rrp", "count"),
         )
     )
@@ -41,7 +45,8 @@ def build_monthly_actuals(panel: pd.DataFrame | None = None) -> pd.DataFrame:
     if panel is None:
         panel = read_sql(
             """
-            SELECT settlementdate, regionid, rrp, totaldemand, netinterchange
+            SELECT settlementdate, regionid, rrp, totaldemand, netinterchange,
+                   demandforecast, aemo_demand_error
             FROM dwh.panel
             """
         )
@@ -50,8 +55,9 @@ def build_monthly_actuals(panel: pd.DataFrame | None = None) -> pd.DataFrame:
     df = panel.copy()
     df["settlementdate"] = pd.to_datetime(df["settlementdate"], errors="coerce")
     df["month_start"] = df["settlementdate"].dt.to_period("M").dt.to_timestamp()
-    if "netinterchange" not in df.columns:
-        df["netinterchange"] = 0.0
+    for c in ("netinterchange", "demandforecast", "aemo_demand_error"):
+        if c not in df.columns:
+            df[c] = pd.NA
     monthly = (
         df.groupby(["month_start", "regionid"], as_index=False)
         .agg(
@@ -62,6 +68,8 @@ def build_monthly_actuals(panel: pd.DataFrame | None = None) -> pd.DataFrame:
             max_demand=("totaldemand", "max"),
             min_demand=("totaldemand", "min"),
             avg_netinterchange=("netinterchange", "mean"),
+            avg_demandforecast=("demandforecast", "mean"),
+            avg_aemo_demand_error=("aemo_demand_error", "mean"),
             intervals=("rrp", "count"),
         )
     )

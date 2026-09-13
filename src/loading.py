@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import pandas as pd
@@ -67,6 +68,16 @@ def delete_date_window(
     end,
     date_col: str = "settlementdate",
 ):
+    """
+    Delete rows in [start, end).
+    Start/end are normalized to calendar-day midnights so we never miss
+    rows when the CSV first interval is 00:05 instead of 00:00.
+    """
+    start = pd.Timestamp(start).normalize().to_pydatetime()
+    end = pd.Timestamp(end).normalize().to_pydatetime()
+    if end <= start:
+        end = (pd.Timestamp(start) + pd.Timedelta(days=1)).to_pydatetime()
+
     engine = get_engine()
     sql = text(
         f'DELETE FROM "{schema}"."{table_name}" '
@@ -80,18 +91,37 @@ def delete_date_window(
     return n
 
 
+def window_bounds(df: pd.DataFrame, date_col: str = "settlementdate"):
+    """
+    Full calendar days covering the data.
+    start = midnight of min date (inclusive)
+    end   = midnight after max date (exclusive)
+    """
+    s = pd.to_datetime(df[date_col])
+    start = s.min().normalize().to_pydatetime()
+    end = (s.max().normalize() + pd.Timedelta(days=1)).to_pydatetime()
+    return start, end
+
+
 def upsert_window(
     df: pd.DataFrame,
     schema: str,
     table_name: str,
-    start,
-    end,
+    start=None,
+    end=None,
     date_col: str = "settlementdate",
 ):
-    """Incremental: delete only [start, end), then append."""
+    """
+    Incremental load: delete full calendar day(s) covered by df, then append.
+    start/end arguments are ignored if df is non-empty — bounds always come
+    from the dataframe so DELETE and INSERT cover the same keys.
+    """
     if df is None or df.empty:
         print(f"  skip upsert: {schema}.{table_name} (empty)")
         return
+
+    # Always derive window from the data being loaded (avoids 00:05 PK clashes)
+    start, end = window_bounds(df, date_col=date_col)
     delete_date_window(schema, table_name, start, end, date_col=date_col)
     load_data(df, table_name, schema=schema, if_exists="append")
 
@@ -103,9 +133,37 @@ def read_sql(sql: str, params: Optional[dict] = None) -> pd.DataFrame:
     return df
 
 
-def window_bounds(df: pd.DataFrame, date_col: str = "settlementdate"):
-    """Return (start, end) exclusive end = day after max date."""
-    s = pd.to_datetime(df[date_col])
-    start = s.min().to_pydatetime()
-    end = (s.max().normalize() + pd.Timedelta(days=1)).to_pydatetime()
-    return start, end
+def next_day_window_from_db(
+    schema: str = "staging",
+    table: str = "stg_price_demand",
+    date_col: str = "settlementdate",
+) -> tuple[str, str]:
+    """
+    Return NEMOSIS-style (start, end) for the calendar day AFTER the latest
+    settlement date already in the table.
+
+    Uses MAX(date)::date so a lone midnight row does not skip a full day of data.
+    If the table is empty, fall back to yesterday 00:00 → today 00:00 UTC.
+    """
+    df = read_sql(
+        f'SELECT MAX("{date_col}")::date AS max_d FROM "{schema}"."{table}"'
+    )
+    if df.empty or df.iloc[0]["max_d"] is None or pd.isna(df.iloc[0]["max_d"]):
+        end = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        start = end - timedelta(days=1)
+        print(f"  DB empty — fallback window {start} → {end}")
+        return (
+            start.strftime("%Y/%m/%d %H:%M:%S"),
+            end.strftime("%Y/%m/%d %H:%M:%S"),
+        )
+
+    max_d = pd.Timestamp(df.iloc[0]["max_d"]).normalize()
+    start = (max_d + pd.Timedelta(days=1)).to_pydatetime()
+    end = (max_d + pd.Timedelta(days=2)).to_pydatetime()
+    print(f"  max loaded date={max_d.date()} → next day {start} → {end}")
+    return (
+        start.strftime("%Y/%m/%d %H:%M:%S"),
+        end.strftime("%Y/%m/%d %H:%M:%S"),
+    )

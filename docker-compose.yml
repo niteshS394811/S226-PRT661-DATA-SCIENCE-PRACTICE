@@ -1,0 +1,166 @@
+services:
+
+  postgres:
+    build:
+      context: ./docker/postgres
+      dockerfile: Dockerfile
+    image: nem-postgres:17
+    container_name: nem_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  airflow-init:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    container_name: airflow_init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg://postgres:postgres@postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      PYTHONPATH: /opt/airflow
+    command:
+      - bash
+      - -c
+      - |
+        airflow db migrate
+        if airflow users list | grep -q "admin"; then
+          airflow users reset-password --username admin --password admin
+        else
+          airflow users create --username admin --password admin \
+            --firstname Airflow --lastname Admin --role Admin --email admin@example.com
+        fi
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - ./logs:/opt/airflow/logs
+
+  airflow-api-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    container_name: airflow_api_server
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg://postgres:postgres@postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      AIRFLOW__API_AUTH__JWT_SECRET: nem-development-jwt-secret-change-for-production-1234567890
+      PYTHONPATH: /opt/airflow
+      NEM_DATABASE_URL: postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb
+    command: airflow api-server
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - ./logs:/opt/airflow/logs
+
+  airflow-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    container_name: airflow_scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg://postgres:postgres@postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
+      AIRFLOW__API_AUTH__JWT_SECRET: nem-development-jwt-secret-change-for-production-1234567890
+      PYTHONPATH: /opt/airflow
+      NEM_DATABASE_URL: postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb
+    command: airflow scheduler
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - ./logs:/opt/airflow/logs
+
+  airflow-dag-processor:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    container_name: airflow_dag_processor
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg://postgres:postgres@postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      PYTHONPATH: /opt/airflow
+      NEM_DATABASE_URL: postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb
+    command: airflow dag-processor
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - ./logs:/opt/airflow/logs
+
+  dashboard-daily:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nem_dashboard_daily
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NEM_DB_HOST: postgres
+      NEM_DATABASE_URL: postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb
+    command: streamlit run dashboard_daily.py --server.address=0.0.0.0 --server.port=8501
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./src:/app/src
+      - ./dashboard_daily.py:/app/dashboard_daily.py
+      - ./scripts:/app/scripts
+
+  dashboard-weekly:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nem_dashboard_weekly
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NEM_DB_HOST: postgres
+      NEM_DATABASE_URL: postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb
+    command: streamlit run dashboard_weekly.py --server.address=0.0.0.0 --server.port=8502
+    ports:
+      - "8502:8502"
+    volumes:
+      - ./src:/app/src
+      - ./dashboard_weekly.py:/app/dashboard_weekly.py
+      - ./scripts:/app/scripts
+
+volumes:
+  postgres_data:

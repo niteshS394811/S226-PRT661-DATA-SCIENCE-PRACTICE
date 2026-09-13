@@ -1,57 +1,36 @@
-##PRT661 – Data Science Practice ##
-Danala Group 8 Theme 2
+# PRT661 – NEM Forecasting (complete package)
 
-Repository Layout
-```
-nem-forecasting/
-├── src/
-│   ├── ingestion/       # BaseDataClient, NemwebClient
-│   ├── etl/             # Transformer, FeatureBuilder
-│   ├── models/          # BaseForecaster, LstmForecaster, GruForecaster, metrics
-│   ├── storage/         # BaseRepository, SqlServerRepository, SQLiteRepository
-│   ├── visualisation/   # TableauExporter
-│   └── pipeline.py      # ForecastPipeline orchestrator
-├── dags/                # Airflow DAG (nem_forecast_dag.py)
-├── scripts/             # run_pipeline.py CLI entry point
-├── tests/               # pytest unit tests (run offline, synthetic data)
-├── docs/                # architecture & workflow docs
-├── requirements.txt
-├── pyproject.toml
-└── README.md
-```
+Danala Group 8 · Theme 2 · Australian NEM price & demand
 
-## Quickstart
+## Features
 
-### Run with Docker
+- Layered Postgres: staging → dwh → datamart
+- 5-min models + **hourly 1d/1w** (tables created in `init.sql` on first volume)
+- History and daily pipelines refresh hourly forecasts automatically
+- Daily dashboard: 1 hour / 1 day / 1 week forecast views
 
-Build the image:
+## Clean start (no manual SQL)
 
 ```bash
-docker compose build
+export POSTGRES_HOST_PORT=5433
+docker compose down -v
+docker compose up -d --build
+
+docker compose run --rm \
+  -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
+  dashboard-daily python /app/scripts/run_history_pipeline.py \
+  --start 2025/01/01 --end 2025/02/12
 ```
 
-Run the repository's default extraction pipeline:
+Hourly tables exist from init; history fills 5-min + hourly forecasts.
+
+Daily:
 
 ```bash
-docker compose run --rm app
+docker compose run --rm \
+  -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
+  dashboard-daily python /app/scripts/run_daily_pipeline.py
 ```
 
-The complete repository is copied into the image. The `src/data` directory is
-mounted into the container, so downloaded files remain in `src/data/raw_cache`
-and the merged output is written to
-`src/data/processed/nemweb_price_demand_raw.csv`.
-
-To run another repository script, override the command, for example:
-
-```bash
-docker compose run --rm app python test.py
-```
-
-## Data source modes
-
-## Storage
-
-
-## License / data attribution
-
-All electricity market data is sourced from AEMO NEMWEB under its Copyright Permissions Notice. See the project proposal (`docs/`) for full ethics, privacy and attribution details.
+- http://localhost:8501 · http://localhost:8502 · Airflow :8080
+- DBeaver: localhost:5433 · nemdb · nemuser / nempassword

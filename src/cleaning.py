@@ -1,4 +1,4 @@
-"""Clean extracted NEM price + demand + netinterchange data before staging load."""
+"""Clean extracted NEM data before staging load."""
 from __future__ import annotations
 
 import pandas as pd
@@ -13,6 +13,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
         "RRP": "rrp",
         "TOTALDEMAND": "totaldemand",
         "NETINTERCHANGE": "netinterchange",
+        "DEMANDFORECAST": "demandforecast",
     }
     df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
 
@@ -22,8 +23,20 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     if "netinterchange" not in df.columns:
         df["netinterchange"] = 0.0
     df["netinterchange"] = pd.to_numeric(df["netinterchange"], errors="coerce").fillna(0.0)
+    if "demandforecast" not in df.columns:
+        df["demandforecast"] = pd.NA
+    df["demandforecast"] = pd.to_numeric(df["demandforecast"], errors="coerce")
 
     df = df.dropna(subset=["settlementdate", "regionid", "rrp", "totaldemand"])
     df = df.drop_duplicates(subset=["settlementdate", "regionid"])
     df = df.sort_values(["settlementdate", "regionid"]).reset_index(drop=True)
-    return df[["settlementdate", "regionid", "rrp", "totaldemand", "netinterchange"]]
+    return df[
+        [
+            "settlementdate",
+            "regionid",
+            "rrp",
+            "totaldemand",
+            "netinterchange",
+            "demandforecast",
+        ]
+    ]

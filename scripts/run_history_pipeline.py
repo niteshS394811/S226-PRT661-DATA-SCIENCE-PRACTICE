@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pipeline 1: HISTORY load (full refresh) + train models + forecasts."""
+"""Pipeline 1: HISTORY load (full refresh) + 5-min train + hourly 1d/1w forecasts."""
 from __future__ import annotations
 
 import argparse
@@ -15,7 +15,7 @@ from src.cleaning import clean_data
 from src.extraction import main as extract_main
 from src.loading import replace_table, read_sql
 from src.mart import load_daily_actuals, load_monthly_actuals
-from src.modelling import train_and_forecast
+from src.modelling import train_and_forecast, train_and_forecast_hourly
 from src.transformation import build_panel, build_features
 
 RAW = ROOT / "src" / "data" / "processed" / "nemweb_price_demand_raw.csv"
@@ -24,7 +24,7 @@ CLEAN = ROOT / "src" / "data" / "processed" / "nemweb_price_demand_cleaned.csv"
 
 def run(skip_extract: bool = False, start: str | None = None, end: str | None = None):
     print("=" * 60)
-    print("PIPELINE 1: HISTORY load + train (includes NETINTERCHANGE)")
+    print("PIPELINE 1: HISTORY load + 5-min train + hourly forecasts")
     print("=" * 60)
 
     if not skip_extract:
@@ -46,7 +46,7 @@ def run(skip_extract: bool = False, start: str | None = None, end: str | None = 
     print("\n[4] FULL REFRESH dwh.panel + dwh.features")
     stg = read_sql(
         """
-        SELECT settlementdate, regionid, rrp, totaldemand, netinterchange
+        SELECT settlementdate, regionid, rrp, totaldemand, netinterchange, demandforecast
         FROM staging.stg_price_demand
         """
     )
@@ -61,9 +61,18 @@ def run(skip_extract: bool = False, start: str | None = None, end: str | None = 
     monthly = load_monthly_actuals(panel, full_refresh=True)
     print(f"  daily={len(daily):,} monthly={len(monthly):,}")
 
-    print("\n[6] Train models + forecasts")
+    print("\n[6] Train 5-min models + ~1h forecasts")
     _, forecasts = train_and_forecast()
-    print(f"  forecasts={0 if forecasts is None else len(forecasts)}")
+    print(f"  5-min forecasts={0 if forecasts is None else len(forecasts)}")
+
+    print("\n[7] Hourly aggregate models + 1d/1w forecasts")
+    try:
+        hourly = train_and_forecast_hourly(do_1d=True, do_1w=True)
+        n = 0 if hourly["forecasts"] is None else len(hourly["forecasts"])
+        print(f"  hourly forecasts={n}")
+    except Exception as e:
+        print(f"  hourly forecast step failed (5-min pipeline still OK): {e}")
+
     print("\nHistory pipeline complete.")
 
 

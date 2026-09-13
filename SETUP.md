@@ -18,11 +18,6 @@ docker compose run --rm \
 # ... run_history_pipeline.py --start 2025/01/01 --end 2025/01/08
 ```
 
-docker compose run --rm \
-  -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
-  dashboard-daily python /app/scripts/run_history_pipeline.py --start 2025/01/01 --end 2025/01/08
-
-
 ### Pipeline 2 – daily (adds rows)
 
 ```bash
@@ -31,11 +26,6 @@ docker compose run --rm \
   dashboard-daily python /app/scripts/run_daily_pipeline.py
 # or fixed day:
 # ... --start 2025/01/06 --end 2025/01/07
-```
-
-docker compose run --rm \
-  -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
-  dashboard-daily python /app/scripts/run_daily_pipeline.py --start 2025/01/06 --end 2025/01/07
 ```
 
 ### Pipeline 3 – weekly train

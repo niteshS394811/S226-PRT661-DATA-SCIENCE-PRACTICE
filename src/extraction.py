@@ -16,8 +16,9 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 REGIONS = ["NSW1", "QLD1", "VIC1", "SA1", "TAS1"]
 
+# HD package: longer default history (~3 weeks of 2025 sample window)
 HISTORY_START = "2025/01/01 00:00:00"
-HISTORY_END = "2025/01/08 00:00:00"
+HISTORY_END = "2025/02/10 00:00:00"
 
 
 def yesterday_window() -> tuple[str, str]:
@@ -61,6 +62,7 @@ def fetch_dispatch_demand(start: str, end: str) -> pd.DataFrame:
             "REGIONID",
             "TOTALDEMAND",
             "NETINTERCHANGE",
+            "DEMANDFORECAST",
             "INTERVENTION",
         ],
         filter_cols=["REGIONID"],
@@ -68,7 +70,13 @@ def fetch_dispatch_demand(start: str, end: str) -> pd.DataFrame:
     )
     if df is None or df.empty:
         return pd.DataFrame(
-            columns=["SETTLEMENTDATE", "REGIONID", "TOTALDEMAND", "NETINTERCHANGE"]
+            columns=[
+                "SETTLEMENTDATE",
+                "REGIONID",
+                "TOTALDEMAND",
+                "NETINTERCHANGE",
+                "DEMANDFORECAST",
+            ]
         )
     return df[df["INTERVENTION"] == 0].drop(columns=["INTERVENTION"])
 
@@ -76,7 +84,7 @@ def fetch_dispatch_demand(start: str, end: str) -> pd.DataFrame:
 def extract(start: str, end: str, output_name: str = "nemweb_price_demand_raw.csv") -> pd.DataFrame:
     price_df = fetch_dispatch_prices(start, end)
     demand_df = fetch_dispatch_demand(start, end)
-    print("Merging price + demand (+ netinterchange)...")
+    print("Merging price + demand (+ netinterchange, demandforecast)...")
     merged = pd.merge(price_df, demand_df, on=["SETTLEMENTDATE", "REGIONID"], how="inner")
     merged["SETTLEMENTDATE"] = pd.to_datetime(merged["SETTLEMENTDATE"])
     merged = merged.sort_values(["SETTLEMENTDATE", "REGIONID"]).reset_index(drop=True)

@@ -10,11 +10,15 @@ def build_panel(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(subset=["settlementdate"]).sort_values(["regionid", "settlementdate"])
     if "netinterchange" not in df.columns:
         df["netinterchange"] = 0.0
+    if "demandforecast" not in df.columns:
+        df["demandforecast"] = pd.NA
     df["hour"] = df["settlementdate"].dt.hour
     df["day"] = df["settlementdate"].dt.day
     df["month"] = df["settlementdate"].dt.month
     df["day_of_week"] = df["settlementdate"].dt.dayofweek
     df["is_weekend"] = (df["day_of_week"] >= 5).astype(int)
+    # Error vs AEMO demand forecast (insight / optional feature)
+    df["aemo_demand_error"] = df["totaldemand"] - pd.to_numeric(df["demandforecast"], errors="coerce")
     return df[
         [
             "settlementdate",
@@ -22,6 +26,8 @@ def build_panel(df: pd.DataFrame) -> pd.DataFrame:
             "rrp",
             "totaldemand",
             "netinterchange",
+            "demandforecast",
+            "aemo_demand_error",
             "hour",
             "day",
             "month",
@@ -53,6 +59,8 @@ def build_features(panel: pd.DataFrame) -> pd.DataFrame:
         "rrp",
         "totaldemand",
         "netinterchange",
+        "demandforecast",
+        "aemo_demand_error",
         "hour",
         "day_of_week",
         "is_weekend",
@@ -65,7 +73,7 @@ def build_features(panel: pd.DataFrame) -> pd.DataFrame:
         "price_lag_12",
         "netinterchange_lag_1",
     ]
-    return out[cols]
+    return out[[c for c in cols if c in out.columns]]
 
 
 def transform_data(df: pd.DataFrame) -> pd.DataFrame:

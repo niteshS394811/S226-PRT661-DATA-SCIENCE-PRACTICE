@@ -14,12 +14,6 @@ OUTPUT_DIR = os.path.join(SCRIPT_DIR, "data", "processed")
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-########## Configurations ########
-########### NEMWEB requires YYYY/MM/DD HH:MM:SS format ##############
-START_DATE = "2025/01/06 00:00:00"
-END_DATE = "2025/01/07 00:00:00"  # 1 week test range
-
-############ Target regions defined in your proposal ###########3
 REGIONS = ["NSW1", "QLD1", "VIC1", "SA1", "TAS1"]
 
 # HD package: longer default history (~3 weeks of 2025 sample window)

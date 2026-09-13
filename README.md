@@ -34,3 +34,6 @@ docker compose run --rm \
 
 - http://localhost:8501 · http://localhost:8502 · Airflow :8080
 - DBeaver: localhost:5433 · nemdb · nemuser / nempassword
+
+
+Detail guide in SETUP.md

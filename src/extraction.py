@@ -16,7 +16,6 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 REGIONS = ["NSW1", "QLD1", "VIC1", "SA1", "TAS1"]
 
-# HD package: longer default history (~3 weeks of 2025 sample window)
 HISTORY_START = "2025/01/01 00:00:00"
 HISTORY_END = "2025/02/10 00:00:00"
 

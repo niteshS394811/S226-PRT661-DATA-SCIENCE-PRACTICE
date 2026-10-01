@@ -1,4 +1,4 @@
-"""Daily dashboard — actuals + forecasts at 1 hour (5-min) or 1 day hourly."""
+"""Operational / Daily dashboard — modern fintech-style UI."""
 from __future__ import annotations
 
 import os
@@ -8,8 +8,65 @@ import pandas as pd
 import psycopg
 import streamlit as st
 
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+except ImportError:
+    px = None
+    go = None
+
 DB_HOST = os.environ.get("NEM_DB_HOST", "postgres")
 CONN = f"host={DB_HOST} port=5432 dbname=nemdb user=nemuser password=nempassword"
+
+st.set_page_config(
+    page_title="NEM Operational",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# --- Modern light UI (inspired by fintech admin dashboards) ---
+st.markdown(
+    """
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+  .stApp { background: #F4F7FB; }
+  [data-testid="stSidebar"] {
+    background: #FFFFFF;
+    border-right: 1px solid #E8EEF6;
+  }
+  .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1200px; }
+  div[data-testid="stMetric"] {
+    background: #FFFFFF;
+    border: 1px solid #E8EEF6;
+    border-radius: 16px;
+    padding: 16px 18px;
+    box-shadow: 0 4px 18px rgba(15, 23, 42, 0.04);
+  }
+  div[data-testid="stMetric"] label { color: #64748B !important; font-weight: 500; }
+  div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+    color: #0F172A !important; font-weight: 700; font-size: 1.6rem;
+  }
+  .nem-card {
+    background: #FFFFFF;
+    border: 1px solid #E8EEF6;
+    border-radius: 16px;
+    padding: 18px 20px;
+    box-shadow: 0 4px 18px rgba(15, 23, 42, 0.04);
+    margin-bottom: 0.75rem;
+  }
+  .nem-title { font-size: 1.45rem; font-weight: 700; color: #0F172A; margin: 0; }
+  .nem-sub { color: #64748B; font-size: 0.9rem; margin-top: 0.2rem; }
+  .pill {
+    display: inline-block; background: #ECFDF5; color: #059669;
+    font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+  }
+  header[data-testid="stHeader"] { background: rgba(244,247,251,0.85); }
+</style>
+""",
+    unsafe_allow_html=True,
+)
 
 
 @st.cache_data(ttl=60)
@@ -22,12 +79,15 @@ def q(sql: str) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=cols)
 
 
-st.set_page_config(page_title="NEM Daily | Danala Group 8", page_icon="📅", layout="wide")
-st.title("NEM Daily Operations Dashboard")
-st.caption(
-    f"PRT661 · Danala Group 8 · Actuals, interchange, AEMO error · "
-    f"Forecasts: **1 hour (5-min)** or **1 day (hourly)** · "
-    f"{datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC"
+st.markdown(
+    f"""
+<div class="nem-card">
+  <div class="nem-title">⚡ NEM Operational / Daily</div>
+  <div class="nem-sub">Short-term ops · actuals · ~12 hour forecasts · incremental load ·
+  {datetime.utcnow().strftime("%Y-%m-%d %H:%M")} UTC</div>
+</div>
+""",
+    unsafe_allow_html=True,
 )
 
 try:
@@ -42,12 +102,11 @@ try:
     )
 except Exception as e:
     st.error(str(e))
-    st.info("Run history pipeline so daily mart exists.")
+    st.info("Run strategic history so the datamart exists.")
     st.stop()
 
-# Optional tables — empty if not migrated / not trained yet
 try:
-    forecasts_5min = q(
+    forecasts = q(
         """
         SELECT forecast_run_at, settlementdate, regionid, target,
                prediction, model_name, horizon_steps
@@ -56,179 +115,134 @@ try:
         """
     )
 except Exception:
-    forecasts_5min = pd.DataFrame()
-
-try:
-    forecasts_hourly = q(
-        """
-        SELECT forecast_run_at, forecast_hour, regionid, target,
-               prediction, model_name, horizon_hours, horizon_label
-        FROM datamart.dm_hourly_forecasts
-        WHERE forecast_run_at = (
-            SELECT MAX(forecast_run_at) FROM datamart.dm_hourly_forecasts
-        )
-        """
-    )
-except Exception:
-    forecasts_hourly = pd.DataFrame()
+    forecasts = pd.DataFrame()
 
 if daily.empty:
-    st.warning("No daily actuals yet — run the history pipeline.")
+    st.warning("No daily actuals yet — run strategic history / daily pipeline.")
     st.stop()
 
 daily["trade_date"] = pd.to_datetime(daily["trade_date"])
-num_cols = [
+for c in [
     "avg_rrp", "max_rrp", "min_rrp", "avg_demand", "max_demand", "min_demand",
     "avg_netinterchange", "avg_demandforecast", "avg_aemo_demand_error",
-]
-for c in num_cols:
+]:
     if c in daily.columns:
         daily[c] = pd.to_numeric(daily[c], errors="coerce")
 
 with st.sidebar:
-    st.header("Filters")
+    st.markdown("### Filters")
     regions = st.multiselect(
         "Regions",
         sorted(daily["regionid"].unique()),
         default=sorted(daily["regionid"].unique()),
     )
     dmin, dmax = daily["trade_date"].min().date(), daily["trade_date"].max().date()
-    dr = st.date_input("Date range (actuals)", (dmin, dmax), min_value=dmin, max_value=dmax)
+    dr = st.date_input("Date range", (dmin, dmax), min_value=dmin, max_value=dmax)
     st.markdown("---")
-    st.subheader("Forecast view")
-    horizon_choice = st.radio(
-        "Horizon",
-        [
-            "1 hour (5-min steps)",
-            "1 day (hourly)",
-            "1 week (hourly)",
-        ],
-        index=0,
-    )
-    st.markdown("---")
-    st.markdown("**Units:** RRP $/MWh · Demand / interchange MW")
-    st.markdown("**Interchange:** + import · − export")
+    st.caption("Operational = Daily pipeline")
+    st.caption("DAG: `nem_operational_daily`")
 
-f = daily[daily["regionid"].isin(regions)].copy()
-if len(dr) == 2:
-    f = f[f["trade_date"].dt.date.between(dr[0], dr[1])]
+if not regions:
+    st.warning("Select at least one region.")
+    st.stop()
 
-k1, k2, k3, k4, k5 = st.columns(5)
-k1.metric("Days", f"{f['trade_date'].nunique()}")
-k2.metric("Avg RRP", f"${f['avg_rrp'].mean():,.1f}")
-k3.metric("Avg demand", f"{f['avg_demand'].mean():,.0f} MW")
-k4.metric(
-    "Avg interchange",
-    f"{f['avg_netinterchange'].mean():,.0f} MW" if "avg_netinterchange" in f else "—",
-)
-if "avg_aemo_demand_error" in f.columns and f["avg_aemo_demand_error"].notna().any():
-    k5.metric("Avg AEMO demand error", f"{f['avg_aemo_demand_error'].mean():,.0f} MW")
-else:
-    k5.metric("Peak RRP", f"${f['max_rrp'].max():,.0f}")
+mask = daily["regionid"].isin(regions)
+if isinstance(dr, (list, tuple)) and len(dr) == 2:
+    mask &= (daily["trade_date"].dt.date >= dr[0]) & (daily["trade_date"].dt.date <= dr[1])
+d = daily.loc[mask].copy()
 
-t1, t2, t3 = st.tabs(["Market actuals", "Interchange & AEMO", "Forecasts"])
+# KPI row
+latest = d.sort_values("trade_date").groupby("regionid").tail(1)
+k1, k2, k3, k4 = st.columns(4)
+with k1:
+    st.metric("Avg RRP (latest days)", f"${latest['avg_rrp'].mean():.1f}", help="Mean of latest day per selected region")
+with k2:
+    st.metric("Avg demand (MW)", f"{latest['avg_demand'].mean():,.0f}")
+with k3:
+    st.metric("Max RRP in view", f"${d['max_rrp'].max():.1f}")
+with k4:
+    ni = latest["avg_netinterchange"].mean() if "avg_netinterchange" in latest else 0
+    st.metric("Mean net interchange", f"{ni:,.0f} MW")
 
-with t1:
-    c1, c2 = st.columns(2)
-    idx = f.set_index("trade_date")
-    with c1:
-        st.subheader("Daily average RRP")
-        st.line_chart(idx.pivot_table(index=idx.index, columns="regionid", values="avg_rrp"))
-    with c2:
-        st.subheader("Daily average demand")
-        st.line_chart(idx.pivot_table(index=idx.index, columns="regionid", values="avg_demand"))
-    st.dataframe(f.sort_values("trade_date", ascending=False), use_container_width=True, hide_index=True)
+st.markdown("")
 
-with t2:
-    c1, c2 = st.columns(2)
-    idx = f.set_index("trade_date")
-    with c1:
-        st.subheader("Net interchange (daily avg)")
-        if "avg_netinterchange" in f.columns:
-            st.line_chart(
-                idx.pivot_table(index=idx.index, columns="regionid", values="avg_netinterchange")
-            )
-            st.caption("Positive ≈ net import; negative ≈ net export.")
-        else:
-            st.info("Interchange not loaded.")
-    with c2:
-        st.subheader("AEMO demand forecast error")
-        if "avg_aemo_demand_error" in f.columns and f["avg_aemo_demand_error"].notna().any():
-            st.line_chart(
-                idx.pivot_table(index=idx.index, columns="regionid", values="avg_aemo_demand_error")
-            )
-            st.caption("Actual demand − AEMO DEMANDFORECAST (MW).")
-        else:
-            st.info("DEMANDFORECAST not available for this window.")
-
-with t3:
-    st.subheader(f"Forecast — {horizon_choice}")
-    target = st.radio("Target", ["demand", "price"], horizontal=True, key="fc_target")
-
-    if horizon_choice.startswith("1 hour"):
-        # 5-min / ~1 hour from dm_forecasts
-        if forecasts_5min.empty:
-            st.info("No 5-min forecasts yet — run weekly train / history train.")
-        else:
-            fc = forecasts_5min.copy()
-            fc["settlementdate"] = pd.to_datetime(fc["settlementdate"])
-            fc["prediction"] = pd.to_numeric(fc["prediction"], errors="coerce")
-            fc = fc[fc["regionid"].isin(regions) & (fc["target"] == target)]
-            if fc.empty:
-                st.warning("No rows for this target/region.")
-            else:
-                st.caption(
-                    f"Model: **{fc['model_name'].iloc[0]}** · "
-                    f"Run: {fc['forecast_run_at'].iloc[0]} · "
-                    f"Grain: 5-minute · Horizon: up to 1 hour"
-                )
-                st.line_chart(
-                    fc.set_index("settlementdate").pivot_table(
-                        index="settlementdate", columns="regionid", values="prediction"
-                    )
-                )
-                st.dataframe(
-                    fc.sort_values(["regionid", "settlementdate"]),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
+c1, c2 = st.columns((1.1, 1.2))
+with c1:
+    st.markdown('<div class="nem-card">', unsafe_allow_html=True)
+    st.markdown("**Demand share by region** (selected range)")
+    share = d.groupby("regionid", as_index=False)["avg_demand"].mean()
+    if px and not share.empty:
+        fig = px.pie(
+            share, names="regionid", values="avg_demand", hole=0.45,
+            color_discrete_sequence=px.colors.qualitative.Set2,
+        )
+        fig.update_layout(
+            margin=dict(l=10, r=10, t=10, b=10), height=320,
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            legend=dict(orientation="v", y=0.5),
+        )
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        # Hourly 1d or 1w from dm_hourly_forecasts
-        label = "1d" if horizon_choice.startswith("1 day") else "1w"
-        if forecasts_hourly.empty:
-            st.info(
-                "No hourly forecasts yet. Create tables (migrate_hourly_forecast.sql) "
-                "and run: python /app/scripts/run_hourly_forecast.py"
+        st.dataframe(share)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with c2:
+    st.markdown('<div class="nem-card">', unsafe_allow_html=True)
+    st.markdown("**Market overview — average daily RRP**")
+    if px:
+        fig = px.line(d, x="trade_date", y="avg_rrp", color="regionid")
+        fig.update_layout(
+            margin=dict(l=10, r=10, t=10, b=10), height=320,
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            legend_title_text="", xaxis_title="", yaxis_title="$/MWh",
+        )
+        fig.update_xaxes(showgrid=True, gridcolor="#EEF2F7")
+        fig.update_yaxes(showgrid=True, gridcolor="#EEF2F7")
+        st.plotly_chart(fig, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+c3, c4 = st.columns(2)
+with c3:
+    st.markdown('<div class="nem-card">', unsafe_allow_html=True)
+    st.markdown("**Average daily demand (MW)**")
+    if px:
+        fig = px.line(d, x="trade_date", y="avg_demand", color="regionid")
+        fig.update_layout(
+            margin=dict(l=10, r=10, t=10, b=10), height=300,
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            legend_title_text="", xaxis_title="", yaxis_title="MW",
+        )
+        fig.update_xaxes(gridcolor="#EEF2F7")
+        fig.update_yaxes(gridcolor="#EEF2F7")
+        st.plotly_chart(fig, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with c4:
+    st.markdown('<div class="nem-card">', unsafe_allow_html=True)
+    st.markdown("**~12 hour forecasts (latest run)**")
+    if forecasts is None or forecasts.empty:
+        st.info("No forecasts in datamart.dm_forecasts yet — run train after strategic/daily load.")
+    else:
+        f = forecasts.copy()
+        f["settlementdate"] = pd.to_datetime(f["settlementdate"])
+        f = f[f["regionid"].isin(regions)]
+        if px and not f.empty:
+            fig = px.line(
+                f, x="settlementdate", y="prediction", color="regionid",
+                line_dash="target" if "target" in f.columns else None,
             )
+            fig.update_layout(
+                margin=dict(l=10, r=10, t=10, b=10), height=300,
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                legend_title_text="", xaxis_title="", yaxis_title="Prediction",
+            )
+            st.plotly_chart(fig, use_container_width=True)
         else:
-            fc = forecasts_hourly.copy()
-            fc["forecast_hour"] = pd.to_datetime(fc["forecast_hour"])
-            fc["prediction"] = pd.to_numeric(fc["prediction"], errors="coerce")
-            fc = fc[
-                fc["regionid"].isin(regions)
-                & (fc["target"] == target)
-                & (fc["horizon_label"] == label)
-            ]
-            if fc.empty:
-                st.warning(
-                    f"No hourly rows for label **{label}**. "
-                    "Re-run hourly forecast with day and/or week enabled."
-                )
-            else:
-                st.caption(
-                    f"Model: **{fc['model_name'].iloc[0]}** · "
-                    f"Run: {fc['forecast_run_at'].iloc[0]} · "
-                    f"Grain: hourly · Label: **{label}** "
-                    f"({'24 hours' if label == '1d' else '168 hours'})"
-                )
-                st.line_chart(
-                    fc.set_index("forecast_hour").pivot_table(
-                        index="forecast_hour", columns="regionid", values="prediction"
-                    )
-                )
-                st.dataframe(
-                    fc.sort_values(["regionid", "forecast_hour"]),
-                    use_container_width=True,
-                    hide_index=True,
-                )
+            st.dataframe(f.head(50), use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown('<div class="nem-card">', unsafe_allow_html=True)
+st.markdown("**Recent activity (daily actuals table)**")
+show = d.sort_values(["trade_date", "regionid"], ascending=[False, True]).head(30)
+st.dataframe(show, use_container_width=True, hide_index=True)
+st.markdown("</div>", unsafe_allow_html=True)

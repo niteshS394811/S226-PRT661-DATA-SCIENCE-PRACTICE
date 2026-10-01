@@ -1,4 +1,3 @@
-"""Extract NEM DISPATCHPRICE + DISPATCHREGIONSUM via NEMOSIS → CSV."""
 from __future__ import annotations
 
 import argparse
@@ -17,7 +16,23 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 REGIONS = ["NSW1", "QLD1", "VIC1", "SA1", "TAS1"]
 
 HISTORY_START = "2025/01/01 00:00:00"
-HISTORY_END = "2025/02/10 00:00:00"
+HISTORY_END = "2025/02/12 00:00:00"
+
+REGION_SUM_COLS = [
+    "SETTLEMENTDATE",
+    "REGIONID",
+    "INTERVENTION",
+    "TOTALDEMAND",
+    "NETINTERCHANGE",
+    "DEMANDFORECAST",
+    "AVAILABLEGENERATION",
+    "DISPATCHABLEGENERATION",
+    "INITIALSUPPLY",
+    "CLEAREDSUPPLY",
+    "TOTALINTERMITTENTGENERATION",
+    "UIGF",
+    "SEMISCHEDULE_CLEAREDMW",
+]
 
 
 def yesterday_window() -> tuple[str, str]:
@@ -49,47 +64,39 @@ def fetch_dispatch_prices(start: str, end: str) -> pd.DataFrame:
     return df[df["INTERVENTION"] == 0].drop(columns=["INTERVENTION"])
 
 
-def fetch_dispatch_demand(start: str, end: str) -> pd.DataFrame:
-    print(f"Fetching DISPATCHREGIONSUM ({start} → {end})...")
+def fetch_dispatch_region_sum(start: str, end: str) -> pd.DataFrame:
+    print(f"Fetching DISPATCHREGIONSUM (+ generation fields) ({start} → {end})...")
     df = dynamic_data_compiler(
         start_time=start,
         end_time=end,
         table_name="DISPATCHREGIONSUM",
         raw_data_location=CACHE_DIR,
-        select_columns=[
-            "SETTLEMENTDATE",
-            "REGIONID",
-            "TOTALDEMAND",
-            "NETINTERCHANGE",
-            "DEMANDFORECAST",
-            "INTERVENTION",
-        ],
+        select_columns=REGION_SUM_COLS,
         filter_cols=["REGIONID"],
         filter_values=(REGIONS,),
     )
+    keep = [c for c in REGION_SUM_COLS if c != "INTERVENTION"]
     if df is None or df.empty:
-        return pd.DataFrame(
-            columns=[
-                "SETTLEMENTDATE",
-                "REGIONID",
-                "TOTALDEMAND",
-                "NETINTERCHANGE",
-                "DEMANDFORECAST",
-            ]
-        )
+        return pd.DataFrame(columns=keep)
     return df[df["INTERVENTION"] == 0].drop(columns=["INTERVENTION"])
 
 
 def extract(start: str, end: str, output_name: str = "nemweb_price_demand_raw.csv") -> pd.DataFrame:
     price_df = fetch_dispatch_prices(start, end)
-    demand_df = fetch_dispatch_demand(start, end)
-    print("Merging price + demand (+ netinterchange, demandforecast)...")
-    merged = pd.merge(price_df, demand_df, on=["SETTLEMENTDATE", "REGIONID"], how="inner")
+    region_df = fetch_dispatch_region_sum(start, end)
+    print("Merging price + demand + generation fields...")
+    merged = pd.merge(price_df, region_df, on=["SETTLEMENTDATE", "REGIONID"], how="inner")
     merged["SETTLEMENTDATE"] = pd.to_datetime(merged["SETTLEMENTDATE"])
+    if "AVAILABLEGENERATION" in merged.columns and "TOTALDEMAND" in merged.columns:
+        merged["SPARE_CAPACITY"] = merged["AVAILABLEGENERATION"] - merged["TOTALDEMAND"]
     merged = merged.sort_values(["SETTLEMENTDATE", "REGIONID"]).reset_index(drop=True)
     out = os.path.join(OUTPUT_DIR, output_name)
     merged.to_csv(out, index=False)
+    # also keep analysis-friendly alias
+    alias = os.path.join(OUTPUT_DIR, "analysis_raw_5min.csv")
+    merged.to_csv(alias, index=False)
     print(f"Extraction OK: {len(merged):,} rows → {out}")
+    print(f"  (same data also → {alias} for insights)")
     return merged
 
 
@@ -118,5 +125,4 @@ if __name__ == "__main__":
         start_dt = end_dt - timedelta(days=args.days)
         start = start_dt.strftime("%Y/%m/%d %H:%M:%S")
         end = end_dt.strftime("%Y/%m/%d %H:%M:%S")
-        args.mode = "history" if args.days > 1 else "daily"
     main(start, end, mode=args.mode)

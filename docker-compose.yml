@@ -5,7 +5,6 @@ services:
       context: ./docker/postgres
       dockerfile: Dockerfile
     image: nem-postgres:17
-    container_name: nem_postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -13,7 +12,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -24,7 +23,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.airflow
-    container_name: airflow_init
     depends_on:
       postgres:
         condition: service_healthy
@@ -48,13 +46,13 @@ services:
     volumes:
       - ./dags:/opt/airflow/dags
       - ./src:/opt/airflow/src
+      - ./scripts:/opt/airflow/scripts
       - ./logs:/opt/airflow/logs
 
   airflow-api-server:
     build:
       context: .
       dockerfile: Dockerfile.airflow
-    container_name: airflow_api_server
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,13 +72,13 @@ services:
     volumes:
       - ./dags:/opt/airflow/dags
       - ./src:/opt/airflow/src
+      - ./scripts:/opt/airflow/scripts
       - ./logs:/opt/airflow/logs
 
   airflow-scheduler:
     build:
       context: .
       dockerfile: Dockerfile.airflow
-    container_name: airflow_scheduler
     depends_on:
       postgres:
         condition: service_healthy
@@ -99,13 +97,13 @@ services:
     volumes:
       - ./dags:/opt/airflow/dags
       - ./src:/opt/airflow/src
+      - ./scripts:/opt/airflow/scripts
       - ./logs:/opt/airflow/logs
 
   airflow-dag-processor:
     build:
       context: .
       dockerfile: Dockerfile.airflow
-    container_name: airflow_dag_processor
     depends_on:
       postgres:
         condition: service_healthy
@@ -122,13 +120,13 @@ services:
     volumes:
       - ./dags:/opt/airflow/dags
       - ./src:/opt/airflow/src
+      - ./scripts:/opt/airflow/scripts
       - ./logs:/opt/airflow/logs
 
   dashboard-daily:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: nem_dashboard_daily
     depends_on:
       postgres:
         condition: service_healthy
@@ -143,23 +141,22 @@ services:
       - ./dashboard_daily.py:/app/dashboard_daily.py
       - ./scripts:/app/scripts
 
-  dashboard-weekly:
+  dashboard-strategic:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: nem_dashboard_weekly
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       NEM_DB_HOST: postgres
       NEM_DATABASE_URL: postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb
-    command: streamlit run dashboard_weekly.py --server.address=0.0.0.0 --server.port=8502
+    command: streamlit run dashboard_insights.py --server.address=0.0.0.0 --server.port=8502
     ports:
       - "8502:8502"
     volumes:
       - ./src:/app/src
-      - ./dashboard_weekly.py:/app/dashboard_weekly.py
+      - ./dashboard_insights.py:/app/dashboard_insights.py
       - ./scripts:/app/scripts
 
 volumes:

@@ -21,6 +21,14 @@ CREATE TABLE IF NOT EXISTS staging.stg_price_demand (
     totaldemand     DOUBLE PRECISION,
     netinterchange  DOUBLE PRECISION,
     demandforecast  DOUBLE PRECISION,
+    availablegeneration DOUBLE PRECISION,
+    dispatchablegeneration DOUBLE PRECISION,
+    initialsupply DOUBLE PRECISION,
+    clearedsupply DOUBLE PRECISION,
+    totalintermittentgeneration DOUBLE PRECISION,
+    uigf DOUBLE PRECISION,
+    semischedule_clearedmw DOUBLE PRECISION,
+    spare_capacity DOUBLE PRECISION,
     loaded_at       TIMESTAMP NOT NULL DEFAULT NOW(),
     PRIMARY KEY (settlementdate, regionid)
 );

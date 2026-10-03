@@ -89,21 +89,35 @@ after build complete. either run by airflow UI or by CLI.
 ##  Optional: Airflow DAGs
 
 1. Open http://localhost:8080 (`admin` / `admin`).
-2. Enable DAGs: `nem_history_load_train`, `nem_daily_load`, `nem_weekly_train`.
+2. Enable DAGs: `nem_operational_daily`, `nem_strategic_history`.
 3. Trigger a run manually if needed. also run sequentially. of encounter error first time rerun(error may occur when docker still loading.)
 
 ```bash
 
 docker compose run --rm \
   -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
-  dashboard-daily python /app/scripts/run_history_pipeline.py \
-  --start 2025/01/01 --end 2025/02/12
+  dashboard-daily python /app/scripts/run_strategic_history.py
 ```
 
 | Flag | Meaning |
 |------|---------|
 | `--start` | Inclusive start date |
 | `--end` | **Exclusive** end date (use the next calendar day) |
+
+#skip extract
+docker compose run --rm \
+  -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
+  -v "$(pwd)/src:/app/src" \
+  -v "$(pwd)/scripts:/app/scripts" \
+  dashboard-daily python -c "
+from src.extraction import extract
+df = extract('2024/01/01 00:00:00', '2026/01/01 00:00:00')
+print('ROWS', len(df))
+"
+
+docker compose run --rm \
+  -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
+  dashboard-daily python /app/scripts/run_strategic_history.py --skip-extract
 
 **Notes:**
 
@@ -148,27 +162,22 @@ Schemas: **staging**, **dwh**, **datamart**.
 After history has run at least once:
 
 ```bash
+# Next days
 docker compose run --rm \
   -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
   dashboard-daily python /app/scripts/run_daily_pipeline.py
 ```
+```
 
 This loads **the next calendar day** after `MAX(settlementdate)` in the database (or use `--start` / `--end` for a fixed window).
 
-Weekly retrain only:
-
-```bash
-docker compose run --rm \
-  -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
-  dashboard-daily python /app/scripts/run_weekly_train.py
-```
 
 ---
 
 ## 7. Optional: Airflow DAGs
 
 1. Open http://localhost:8080 (`admin` / `admin`).
-2. Enable DAGs: `nem_history_load_train`, `nem_daily_load`, `nem_weekly_train`.
+2. Enable DAGs: `nem_operational_daily`, `nem_strategic_history`.
 3. Trigger a run manually if needed.
 
 **Note:** Scheduled DAGs only run while your computer and Docker are on. For marking demos, the **CLI commands in sections 4–6** are more reliable.
@@ -213,10 +222,10 @@ S226-PRT661-DATA-SCIENCE-PRACTICE/
 ├── docker-compose.yml      # All services
 ├── docker/postgres/init.sql
 ├── src/                    # extraction, cleaning, loading, transform, modelling
-├── scripts/                # run_history_pipeline, run_daily_pipeline, run_weekly_train
+├── scripts/                # run_analysis_pipeline, run_daily_pipeline, run_strategic_history
 ├── dags/                   # Airflow DAGs
 ├── dashboard_daily.py
-├── dashboard_weekly.py
+├── dashboard_insights.py
 └── requirements.txt
 ```
 
@@ -224,4 +233,4 @@ S226-PRT661-DATA-SCIENCE-PRACTICE/
 
 ---
 
-*Danala Group 8 · PRT661 · September 2026*
+*Danala Group 8 Theme 2 · PRT661 · October 2026*

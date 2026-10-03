@@ -1,39 +1,61 @@
-# PRT661 – NEM Forecasting (complete package)
+# S226 PRT661 — NEM (2 dashboards only)
 
-Danala Group 8 · Theme 2 · Australian NEM price & demand
+## Dashboards
 
-## Features
+| Port | App | File |
+|------|-----|------|
+| **8501** | Operational / Daily | `dashboard_daily.py` |
+| **8502** | Strategic Insights | `dashboard_insights.py` |
 
-- Layered Postgres: staging → dwh → datamart
-- 5-min models + **hourly 1d/1w** (tables created in `init.sql` on first volume)
-- History and daily pipelines refresh hourly forecasts automatically
-- Daily dashboard: 1 hour / 1 day / 1 week forecast views
+## Pipelines kept
 
-## Clean start (no manual SQL)
+| Script | Role |
+|--------|------|
+| `scripts/run_strategic_history.py` | **2024–2025** full load + insights |
+| `scripts/run_daily_pipeline.py` | **Operational = Daily** incremental (`max+1` or `--seed-ops-week`) |
+| `scripts/run_analysis_pipeline.py` | Rebuild insights from same extract if needed |
+
+## Quick start
 
 ```bash
 export POSTGRES_HOST_PORT=5433
-docker compose down -v
 docker compose up -d --build
+
+docker compose exec -T postgres psql -U postgres -d nemdb \
+  < docker/postgres/migrate_unified_columns.sql
+
+# Strategic 2024–2025
+docker compose run --rm \
+  -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
+  dashboard-daily python /app/scripts/run_strategic_history.py
+
+#skip extract
+docker compose run --rm \
+  -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
+  -v "$(pwd)/src:/app/src" \
+  -v "$(pwd)/scripts:/app/scripts" \
+  dashboard-daily python -c "
+from src.extraction import extract
+df = extract('2024/01/01 00:00:00', '2026/01/01 00:00:00')
+print('ROWS', len(df))
+"
 
 docker compose run --rm \
   -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
-  dashboard-daily python /app/scripts/run_history_pipeline.py \
-  --start 2025/01/01 --end 2025/02/12
-```
+  dashboard-daily python /app/scripts/run_strategic_history.py --skip-extract
 
-Hourly tables exist from init; history fills 5-min + hourly forecasts.
+# Operational/Daily seed week (2026-01-01 → 2026-01-08)
+docker compose run --rm \
+  -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
+  dashboard-daily python /app/scripts/run_daily_pipeline.py --seed-ops-week
 
-Daily:
-
-```bash
+# Next days
 docker compose run --rm \
   -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
   dashboard-daily python /app/scripts/run_daily_pipeline.py
 ```
 
-- http://localhost:8501 · http://localhost:8502 · Airflow :8080
-- DBeaver: localhost:5433 · nemdb · nemuser / nempassword
+- http://localhost:8501 — Operational / Daily  
+- http://localhost:8502 — Strategic  
 
-
-Detail guide in SETUP.md
+See `docs/REMOVED.md` for files deleted under this plan.

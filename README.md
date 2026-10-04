@@ -18,6 +18,7 @@
 ## Quick start
 
 ```bash
+docker compose down -v #if want to delete previous volume
 export POSTGRES_HOST_PORT=5433
 docker compose up -d --build
 
@@ -60,4 +61,4 @@ docker compose run --rm \
 - http://localhost:8501 — Operational / Daily  
 - http://localhost:8502 — Strategic  
 
-See `docs/REMOVED.md` for files deleted under this plan.
+

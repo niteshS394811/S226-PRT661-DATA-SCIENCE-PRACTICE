@@ -1,236 +1,97 @@
-# Setup Guide — NEM Price & Demand Forecasting
-
-**Repository:** https://github.com/niteshS394811/S226-PRT661-DATA-SCIENCE-PRACTICE  
-**Unit:** S226 PRT661 Data Science Practice · Danala Group 8 · Theme 2  
-
-This guide is to **clone the repo and run the project on a local machine**.
+Your new README is much closer to the **actual system** (2 dashboards + dual pipelines). Below is a tightened version you can paste as `README.md` — clearer for markers and aligned with the strict mark feedback.
 
 ---
 
-## 1. What you need (prerequisites)
+```markdown
+# S226 PRT661 — NEM Forecasting (2 dashboards)
 
-### Required
+**Danala Group 8 · Theme 2**  
+Australian NEM price & demand — extract → warehouse → models → dashboards
 
-| Software | Why | Download |
-|----------|-----|----------|
-| **Git** | Clone the repository | https://git-scm.com/downloads |
-| **Docker Desktop** | Runs Postgres, pipelines, dashboards, and Airflow in containers | https://www.docker.com/products/docker-desktop/ |
+## Dashboards
 
-**Docker Desktop must be running** before any `docker compose` command.
+| Port | App | File |
+|------|-----|------|
+| **8501** | Operational / Daily | `dashboard_daily.py` |
+| **8502** | Strategic Insights | `dashboard_insights.py` |
 
-| Platform | Notes |
-|----------|--------|
-| **Windows** | Install Docker Desktop; enable WSL 2 if prompted. Use PowerShell or Git Bash. |
-| **macOS** | Install Docker Desktop; grant it enough RAM (recommended **6–8 GB**). |
-| **Linux** | Docker Engine + Docker Compose plugin is enough. |
+## Pipelines
 
-### Optional (only if you want them)
+| Script | Role |
+|--------|------|
+| `scripts/run_strategic_history.py` | Strategic full load (e.g. 2024–2025) + insights |
+| `scripts/run_daily_pipeline.py` | Operational daily incremental (`max(date)+1`, or `--seed-ops-week`) |
+| `scripts/run_analysis_pipeline.py` | Rebuild insights from existing extract if needed |
 
-| Software | Purpose |
-|----------|---------|
-| **DBeaver** or pgAdmin | Browse the database tables | https://dbeaver.io/ |
-| **Local Python 3.11+** | Not required for the main path (everything runs inside Docker) |
-| **Local PostgreSQL** | Not required — Postgres runs in Docker |
+Airflow DAGs (optional): `nem_strategic_history` · `nem_operational_daily`
 
-> **Important:** Do **not** put the project folder in a path that contains a colon `:` (e.g. avoid folders named like `2:09`). Docker volume mounts can fail on those paths (especially on Mac).
+## Architecture (short)
 
----
+AEMO → NEMOSIS extract → clean → `staging` → `dwh` (panel/features) → `datamart` / analytics → Streamlit UIs
 
-## 2. Clone the repository
+## Prerequisites
+
+- Docker Desktop
+- Ports free: **5433** (Postgres host), **8501**, **8502** (and **8080** if using Airflow)
+
+## Quick start
 
 ```bash
-git clone https://github.com/niteshS394811/S226-PRT661-DATA-SCIENCE-PRACTICE.git
-cd S226-PRT661-DATA-SCIENCE-PRACTICE
-```
+docker compose down -v #if want to delete previous volume
 
----
-open docker dektop 
-
-## 3. Start all services (Docker)
-
-If port **5432** is already used on your machine (local Postgres), use host port **5433**:
-
-```bash
-# macOS / Linux
 export POSTGRES_HOST_PORT=5433
-
-# Windows PowerShell
-# $env:POSTGRES_HOST_PORT=5433
-```
-
-Build and start:
-
-```bash
-
-# delete existing volumne if already exist
-
-docker compose down -v
 docker compose up -d --build
+
+# One-time column migration (if needed on existing volume)
+docker compose exec -T postgres psql -U postgres -d nemdb \
+  < docker/postgres/migrate_unified_columns.sql
 ```
+run from apache airflow pipeline
+http://localhost:8080
 
-First build can take **5–15 minutes** (images + dependencies).
-
-Check containers:
+ or
+CLI
+### 1) Strategic history (full window — first run)
 
 ```bash
-docker compose ps
-```
-
-You should see Postgres healthy, dashboards, and Airflow services. Wait until Postgres shows **healthy** before running pipelines.
-
----
-
-
-## 4. Load data and train models (history pipeline)
-
-This downloads real AEMO data via **NEMOSIS** (needs internet), loads the warehouse, trains models, and writes forecasts.
-
-after build complete. either run by airflow UI or by CLI.
-##  Optional: Airflow DAGs
-
-1. Open http://localhost:8080 (`admin` / `admin`).
-2. Enable DAGs: `nem_operational_daily`, `nem_strategic_history`.
-3. Trigger a run manually if needed. also run sequentially. of encounter error first time rerun(error may occur when docker still loading.)
-
-```bash
-
 docker compose run --rm \
   -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
   dashboard-daily python /app/scripts/run_strategic_history.py
 ```
 
-| Flag | Meaning |
-|------|---------|
-| `--start` | Inclusive start date |
-| `--end` | **Exclusive** end date (use the next calendar day) |
+Long extract? Use NEMOSIS cache, then:
 
-#skip extract
+```bash
 docker compose run --rm \
   -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
   -v "$(pwd)/src:/app/src" \
-  -v "$(pwd)/scripts:/app/scripts" \
-  dashboard-daily python -c "
-from src.extraction import extract
-df = extract('2024/01/01 00:00:00', '2026/01/01 00:00:00')
-print('ROWS', len(df))
-"
-
-docker compose run --rm \
-  -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
   dashboard-daily python /app/scripts/run_strategic_history.py --skip-extract
-
-**Notes:**
-
-- Internet is required (AEMO / NEMWEB).
-- First run downloads and caches files under `src/data/raw_cache` (can take several minutes).
-- A shorter window is fine for a quick demo, e.g. `--start 2025/01/01 --end 2025/01/08`.
-
-To re-run training without re-downloading:
-
-```bash
-docker compose run --rm \
-  -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
-  dashboard-daily python /app/scripts/run_history_pipeline.py --skip-extract
 ```
 
----
-
-## 5. Open the applications
-
-| Service | URL | Login (if any) |
-|---------|-----|----------------|
-| **Daily dashboard** | http://localhost:8501 | — |
-| **Weekly / model dashboard** | http://localhost:8502 | — |
-| **Airflow** | http://localhost:8080 | `admin` / `admin` |
-
-### Database (optional — DBeaver)
-
-| Setting | Value |
-|---------|--------|
-| Host | `localhost` |
-| Port | `5433` (or `5432` if you did not set `POSTGRES_HOST_PORT`) |
-| Database | `nemdb` |
-| User | `nemuser` |
-| Password | `nempassword` |
-
-Schemas: **staging**, **dwh**, **datamart**.
-
----
-
-## 6. Optional: daily incremental load
-
-After history has run at least once:
+### 2) Operational / daily (next calendar day only)
 
 ```bash
-# Next days
 docker compose run --rm \
   -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
   dashboard-daily python /app/scripts/run_daily_pipeline.py
 ```
+
+### 3) Open dashboards
+
+- Operational / Daily: http://localhost:8501  
+- Strategic Insights: http://localhost:8502  
+
+DBeaver (optional): `localhost:5433` · database `nemdb` · user `nemuser` / `nempassword`
+
+## Notes 
+
+- **Strategic** = multi-year full refresh + analytics/insights  
+- **Operational = Daily** = incremental upsert only (`max(settlementdate)+1`)  
+- Forecast horizon is **short-term** (ops-focused), not multi-day 1d/1w hourly products  
+- Stack runs on **local Docker**; Airflow schedules only while the host is on  
+
+
+## Repo
+
+https://github.com/niteshS394811/S226-PRT661-DATA-SCIENCE-PRACTICE
 ```
-
-This loads **the next calendar day** after `MAX(settlementdate)` in the database (or use `--start` / `--end` for a fixed window).
-
-
----
-
-## 7. Optional: Airflow DAGs
-
-1. Open http://localhost:8080 (`admin` / `admin`).
-2. Enable DAGs: `nem_operational_daily`, `nem_strategic_history`.
-3. Trigger a run manually if needed.
-
-**Note:** Scheduled DAGs only run while your computer and Docker are on. For marking demos, the **CLI commands in sections 4–6** are more reliable.
-
----
-
-## 8. Stop and clean up
-
-Stop containers (keep data):
-
-```bash
-docker compose down
-```
-
-Stop and **delete all database data** (full reset):
-
-```bash
-docker compose down -v
-```
-
-Then start again with section 3 and re-run the history pipeline.
-
----
-
-## 9. Common problems
-
-| Problem | Fix |
-|---------|-----|
-| `port 5432 already in use` | `export POSTGRES_HOST_PORT=5433` then `docker compose up -d` |
-| `invalid volume specification` (colon in path) | Move/clone the repo to a folder **without** `:` in the path |
-| `NoDataToReturn` from NEMOSIS | Check internet; ensure `--end` is **after** `--start`; try a recent public date range |
-| Dashboards empty | History pipeline has not finished or failed — re-run section 4 |
-| Docker build fails | Update Docker Desktop; free disk space; retry `docker compose up -d --build` |
-| Airflow DAG import errors | Prefer CLI pipelines; ensure `src/` is present in the repo |
-
----
-
-## 10. Project structure (short)
-
-```text
-S226-PRT661-DATA-SCIENCE-PRACTICE/
-├── docker-compose.yml      # All services
-├── docker/postgres/init.sql
-├── src/                    # extraction, cleaning, loading, transform, modelling
-├── scripts/                # run_analysis_pipeline, run_daily_pipeline, run_strategic_history
-├── dags/                   # Airflow DAGs
-├── dashboard_daily.py
-├── dashboard_insights.py
-└── requirements.txt
-```
-
-**Data flow:** NEMWEB → NEMOSIS → staging → dwh → datamart → Streamlit / metrics.
-
----
-
-*Danala Group 8 Theme 2 · PRT661 · October 2026*

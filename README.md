@@ -29,6 +29,12 @@ docker compose run --rm \
   -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
   dashboard-daily python /app/scripts/run_strategic_history.py
 
+# full extract may take time. for short extract 
+docker compose run --rm \
+  -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
+  dashboard-daily python /app/scripts/run_strategic_history.py \
+  --start 2025/01/01 --end 2025/01/08
+  
 #skip extract
 docker compose run --rm \
   -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
@@ -44,10 +50,6 @@ docker compose run --rm \
   -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
   dashboard-daily python /app/scripts/run_strategic_history.py --skip-extract
 
-# Operational/Daily seed week (2026-01-01 → 2026-01-08)
-docker compose run --rm \
-  -e NEM_DATABASE_URL=postgresql+psycopg://nemuser:nempassword@postgres:5432/nemdb \
-  dashboard-daily python /app/scripts/run_daily_pipeline.py --seed-ops-week
 
 # Next days
 docker compose run --rm \

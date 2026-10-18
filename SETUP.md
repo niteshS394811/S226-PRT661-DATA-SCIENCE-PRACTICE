@@ -24,7 +24,9 @@ Australian NEM price & demand — extract → warehouse → models → dashboard
 | `scripts/run_analysis_pipeline.py` | Rebuild insights from existing extract if needed |
 
 Airflow DAGs (optional): `nem_strategic_history` · `nem_operational_daily`
-
+http://localhost:8080
+username: admin
+Password: admin
 ## Architecture (short)
 
 AEMO → NEMOSIS extract → clean → `staging` → `dwh` (panel/features) → `datamart` / analytics → Streamlit UIs

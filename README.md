@@ -62,3 +62,7 @@ docker compose run --rm \
 - http://localhost:8502 — Strategic  
 
 
+Airflow DAGs (optional): `nem_strategic_history` · `nem_operational_daily`
+http://localhost:8080
+username: admin
+Password: admin

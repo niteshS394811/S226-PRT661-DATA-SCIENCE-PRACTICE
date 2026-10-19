@@ -44,8 +44,10 @@ def build_features(panel: pd.DataFrame) -> pd.DataFrame:
         g["demand_lag_1"] = g["totaldemand"].shift(1)
         g["demand_lag_12"] = g["totaldemand"].shift(12)
         g["demand_lag_288"] = g["totaldemand"].shift(288)
-        g["demand_roll_mean_12"] = g["totaldemand"].rolling(12, min_periods=1).mean()
-        g["demand_roll_std_12"] = g["totaldemand"].rolling(12, min_periods=1).std()
+        # Shift before rolling so current-row demand does not leak into features
+        _d_hist = g["totaldemand"].shift(1)
+        g["demand_roll_mean_12"] = _d_hist.rolling(12, min_periods=1).mean()
+        g["demand_roll_std_12"] = _d_hist.rolling(12, min_periods=1).std()
         g["price_lag_1"] = g["rrp"].shift(1)
         g["price_lag_12"] = g["rrp"].shift(12)
         g["netinterchange_lag_1"] = g["netinterchange"].shift(1)

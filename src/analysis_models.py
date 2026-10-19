@@ -108,3 +108,25 @@ def run_classification(hourly: pd.DataFrame, region: str | None = None) -> dict:
         except Exception as e:
             out.append({"model": name, "error": str(e)})
     return {"results": out, "features": feats}
+
+
+def print_classification_summary(clf_out: dict) -> None:
+    """Print precision/recall for each regime class (marker feedback)."""
+    for r in clf_out.get("results", []):
+        if "error" in r:
+            print(f"  {r.get('model')}: {r['error']}")
+            continue
+        print(f"  {r.get('model')} accuracy={r.get('accuracy'):.3f}")
+        report = r.get("report") or {}
+        for label, stats in report.items():
+            if not isinstance(stats, dict):
+                continue
+            if label in ("accuracy", "macro avg", "weighted avg"):
+                continue
+            print(
+                f"    {label}: precision={stats.get('precision', 0):.3f} "
+                f"recall={stats.get('recall', 0):.3f} support={stats.get('support', 0)}"
+            )
+        cm = r.get("confusion")
+        if cm is not None:
+            print(f"    confusion={cm}")

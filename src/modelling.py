@@ -53,8 +53,7 @@ FEATURE_COLS = [
     "netinterchange",
     "netinterchange_lag_1",
 ]
-#HORIZON_STEPS = 12  # ~1 hour at 5-min grain
-HORIZON_STEPS = 144  # ~12 hour at 5-min grain
+HORIZON_STEPS = 12  # ~1 hour at 5-min grain
 PRIMARY_MODEL = "HistGB"
 
 
@@ -248,6 +247,11 @@ def generate_forecasts(df: pd.DataFrame | None = None, horizon: int = HORIZON_ST
                 if f not in last.index or pd.isna(last[f]):
                     last[f] = 0.0
             x_df = last[feats].astype(float).to_frame().T
+            # Keep recent history for rebuilding lag/roll features during recursion
+            hist_demand = list(g["totaldemand"].astype(float).tail(300).values)
+            hist_price = list(g["rrp"].astype(float).tail(300).values)
+            hist_net = list(g["netinterchange"].astype(float).tail(300).values) if "netinterchange" in g.columns else [0.0] * len(hist_demand)
+            feat_list = list(feats)
             for step in range(1, horizon + 1):
                 pred = float(model.predict(x_df)[0])
                 ts = base_ts + pd.Timedelta(minutes=5 * step)
@@ -262,17 +266,38 @@ def generate_forecasts(df: pd.DataFrame | None = None, horizon: int = HORIZON_ST
                         "horizon_steps": step,
                     }
                 )
-                feat_list = list(feats)
-                if target_name == "demand" and "demand_lag_1" in feat_list:
-                    x_df.iloc[0, feat_list.index("demand_lag_1")] = pred
-                if target_name == "price" and "price_lag_1" in feat_list:
-                    x_df.iloc[0, feat_list.index("price_lag_1")] = pred
-                if "hour" in feat_list:
-                    x_df.iloc[0, feat_list.index("hour")] = ts.hour
-                if "day_of_week" in feat_list:
-                    x_df.iloc[0, feat_list.index("day_of_week")] = ts.dayofweek
-                if "is_weekend" in feat_list:
-                    x_df.iloc[0, feat_list.index("is_weekend")] = 1 if ts.dayofweek >= 5 else 0
+                # Append prediction into history for target series
+                if target_name == "demand":
+                    hist_demand.append(pred)
+                elif target_name == "price":
+                    hist_price.append(pred)
+                # Rebuild feature row from history available at issue time (no current actual)
+                def _set(name, val):
+                    if name in feat_list:
+                        x_df.iloc[0, feat_list.index(name)] = float(val)
+                if "demand_lag_1" in feat_list:
+                    _set("demand_lag_1", hist_demand[-1])
+                if "demand_lag_12" in feat_list and len(hist_demand) >= 12:
+                    _set("demand_lag_12", hist_demand[-12])
+                if "demand_lag_288" in feat_list and len(hist_demand) >= 288:
+                    _set("demand_lag_288", hist_demand[-288])
+                if "demand_roll_mean_12" in feat_list:
+                    window = hist_demand[-12:] if len(hist_demand) >= 12 else hist_demand
+                    _set("demand_roll_mean_12", float(np.mean(window)) if window else 0.0)
+                if "demand_roll_std_12" in feat_list:
+                    window = hist_demand[-12:] if len(hist_demand) >= 12 else hist_demand
+                    _set("demand_roll_std_12", float(np.std(window, ddof=0)) if len(window) > 1 else 0.0)
+                if "price_lag_1" in feat_list:
+                    _set("price_lag_1", hist_price[-1])
+                if "price_lag_12" in feat_list and len(hist_price) >= 12:
+                    _set("price_lag_12", hist_price[-12])
+                if "netinterchange" in feat_list:
+                    _set("netinterchange", hist_net[-1] if hist_net else 0.0)
+                if "netinterchange_lag_1" in feat_list and len(hist_net) >= 2:
+                    _set("netinterchange_lag_1", hist_net[-2])
+                _set("hour", ts.hour)
+                _set("day_of_week", ts.dayofweek)
+                _set("is_weekend", 1 if ts.dayofweek >= 5 else 0)
 
     forecasts = pd.DataFrame(rows)
     if not forecasts.empty:
@@ -280,7 +305,113 @@ def generate_forecasts(df: pd.DataFrame | None = None, horizon: int = HORIZON_ST
     return forecasts
 
 
+
+def evaluate_recursive_horizons(
+    df: pd.DataFrame | None = None,
+    horizon: int = HORIZON_STEPS,
+    n_origins: int = 20,
+) -> pd.DataFrame:
+    """Evaluate recursive multi-step forecasts from fixed origins (matches production path).
+
+    Reports MAE/RMSE by horizon_steps so accuracy can be judged further ahead.
+    """
+    if df is None:
+        df = _load_features()
+    if df.empty:
+        return pd.DataFrame()
+
+    rows = []
+    for region in REGIONS:
+        g = df[df["regionid"] == region].sort_values("settlementdate").reset_index(drop=True)
+        if len(g) < 400:
+            continue
+        for target_name, col in TARGETS.items():
+            path = MODEL_DIR / f"{region}_{target_name}.joblib"
+            if not path.exists():
+                continue
+            bundle = joblib.load(path)
+            model, feats = bundle["model"], bundle["features"]
+            # origins near end of series, leave room for horizon
+            max_i = len(g) - horizon - 1
+            if max_i < 300:
+                continue
+            origins = np.linspace(300, max_i, num=min(n_origins, max_i - 300 + 1), dtype=int)
+            by_h = {h: [] for h in range(1, horizon + 1)}
+            for oi in origins:
+                hist = g.iloc[: oi + 1]
+                last = hist.iloc[-1].copy()
+                for f in feats:
+                    if f not in last.index or pd.isna(last[f]):
+                        last[f] = 0.0
+                x_df = last[feats].astype(float).to_frame().T
+                hist_demand = list(hist["totaldemand"].astype(float).tail(300).values)
+                hist_price = list(hist["rrp"].astype(float).tail(300).values)
+                feat_list = list(feats)
+                for step in range(1, horizon + 1):
+                    pred = float(model.predict(x_df)[0])
+                    actual_idx = oi + step
+                    if actual_idx >= len(g):
+                        break
+                    actual = float(g.iloc[actual_idx][col])
+                    by_h[step].append(abs(actual - pred))
+                    ts = pd.Timestamp(last["settlementdate"]) + pd.Timedelta(minutes=5 * step)
+                    if target_name == "demand":
+                        hist_demand.append(pred)
+                    else:
+                        hist_price.append(pred)
+                    def _set(name, val, _x=x_df, _fl=feat_list):
+                        if name in _fl:
+                            _x.iloc[0, _fl.index(name)] = float(val)
+                    if "demand_lag_1" in feat_list:
+                        _set("demand_lag_1", hist_demand[-1])
+                    if "demand_lag_12" in feat_list and len(hist_demand) >= 12:
+                        _set("demand_lag_12", hist_demand[-12])
+                    if "demand_roll_mean_12" in feat_list:
+                        w = hist_demand[-12:]
+                        _set("demand_roll_mean_12", float(np.mean(w)))
+                    if "demand_roll_std_12" in feat_list:
+                        w = hist_demand[-12:]
+                        _set("demand_roll_std_12", float(np.std(w, ddof=0)) if len(w) > 1 else 0.0)
+                    if "price_lag_1" in feat_list:
+                        _set("price_lag_1", hist_price[-1])
+                    if "price_lag_12" in feat_list and len(hist_price) >= 12:
+                        _set("price_lag_12", hist_price[-12])
+                    _set("hour", ts.hour)
+                    _set("day_of_week", ts.dayofweek)
+                    _set("is_weekend", 1 if ts.dayofweek >= 5 else 0)
+            for h, errs in by_h.items():
+                if not errs:
+                    continue
+                mae = float(np.mean(errs))
+                rmse = float(np.sqrt(np.mean(np.square(errs))))
+                rows.append(
+                    {
+                        "regionid": region,
+                        "target": target_name,
+                        "horizon_steps": h,
+                        "mae": mae,
+                        "rmse": rmse,
+                        "n_origins": len(errs),
+                    }
+                )
+                print(f"  recursive {region} {target_name} h={h}: MAE={mae:.2f} RMSE={rmse:.2f}")
+    out = pd.DataFrame(rows)
+    if not out.empty:
+        try:
+            from src.loading import load_data
+            out2 = out.copy()
+            out2["trained_at"] = datetime.now(timezone.utc).replace(tzinfo=None)
+            out2["model_name"] = PRIMARY_MODEL
+            # best-effort persist if table allows extra cols — else CSV
+            out.to_csv("/tmp/recursive_horizon_metrics.csv", index=False)
+            print("  saved /tmp/recursive_horizon_metrics.csv")
+        except Exception as e:
+            print(f"  horizon metrics persist skip: {e}")
+    return out
+
+
 def train_and_forecast():
+
     """Existing entry: 5-min train + ~1h forecast only."""
     result = train_models()
     forecasts = generate_forecasts()
@@ -351,7 +482,7 @@ def build_hourly_features(hourly: pd.DataFrame) -> pd.DataFrame:
         g["is_weekend"] = (g["day_of_week"] >= 5).astype(int)
         g["demand_lag_1"] = g["totaldemand"].shift(1)
         g["demand_lag_24"] = g["totaldemand"].shift(24)
-        g["demand_roll_mean_24"] = g["totaldemand"].rolling(24, min_periods=1).mean()
+        g["demand_roll_mean_24"] = g["totaldemand"].shift(1).rolling(24, min_periods=1).mean()
         g["price_lag_1"] = g["rrp"].shift(1)
         g["price_lag_24"] = g["rrp"].shift(24)
         g["netinterchange_lag_1"] = g["netinterchange"].shift(1)

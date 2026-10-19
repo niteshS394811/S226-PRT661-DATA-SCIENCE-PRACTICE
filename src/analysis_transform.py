@@ -31,27 +31,38 @@ def to_hourly(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def label_price_regime(series: pd.Series) -> pd.Series:
-    """Low / Normal / High / Spike from quantiles (per full sample)."""
-    q25, q75, q95 = series.quantile([0.25, 0.75, 0.95])
+def label_price_regime(series: pd.Series, train_fraction: float = 0.8) -> pd.Series:
+    """Low / Normal / High / Spike from quantiles.
+
+    Thresholds are estimated on the first train_fraction of rows (time-ordered)
+    and applied to the full series — avoids using future test data for cut-offs.
+    """
+    s = series.astype(float)
+    n = len(s)
+    cut = max(int(n * train_fraction), 1)
+    train_s = s.iloc[:cut]
+    q25, q75, q95 = train_s.quantile([0.25, 0.75, 0.95])
     labels = pd.Series(index=series.index, dtype=object)
-    labels[series <= q25] = "Low"
-    labels[(series > q25) & (series <= q75)] = "Normal"
-    labels[(series > q75) & (series <= q95)] = "High"
-    labels[series > q95] = "Spike"
+    labels[s <= q25] = "Low"
+    labels[(s > q25) & (s <= q75)] = "Normal"
+    labels[(s > q75) & (s <= q95)] = "High"
+    labels[s > q95] = "Spike"
     return labels
 
 
 def build_hourly_panel(raw: pd.DataFrame) -> pd.DataFrame:
     hourly = to_hourly(raw)
-    # regime within each region (fairer across TAS vs NSW)
-    hourly["price_regime"] = hourly.groupby("REGIONID")["RRP"].transform(label_price_regime)
+    # regime within each region; thresholds from early (train) window only
+    hourly = hourly.sort_values(["REGIONID", "SETTLEMENTDATE"])
+    hourly["price_regime"] = hourly.groupby("REGIONID")["RRP"].transform(
+        lambda s: label_price_regime(s, train_fraction=0.8)
+    )
     if "SPARE_CAPACITY" in hourly.columns:
-        hourly["tight_system"] = (
-            hourly["SPARE_CAPACITY"] < hourly.groupby("REGIONID")["SPARE_CAPACITY"].transform(
-                lambda s: s.quantile(0.25)
-            )
-        ).astype(int)
+        def _tight(s: pd.Series) -> pd.Series:
+            cut = max(int(len(s) * 0.8), 1)
+            thr = s.iloc[:cut].quantile(0.25)
+            return (s < thr).astype(int)
+        hourly["tight_system"] = hourly.groupby("REGIONID")["SPARE_CAPACITY"].transform(_tight)
     else:
         hourly["tight_system"] = 0
     if "NETINTERCHANGE" in hourly.columns:

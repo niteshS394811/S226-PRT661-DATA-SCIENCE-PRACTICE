@@ -86,8 +86,20 @@ def nem_operational_daily():
         load_monthly_actuals(None, full_refresh=True)
         print(f"Daily upsert complete for [{win_start}, {win_end})")
 
+    @task(task_id="forecast_refresh")
+    def forecast_refresh():
+        """Explicit forecast step so a successful data load cannot leave stale predictions."""
+        _ensure_src_path()
+        from src.modelling import train_and_forecast
+
+        result, forecasts = train_and_forecast()
+        n = 0 if forecasts is None else len(forecasts)
+        print(f"Forecast refresh complete: forecast rows={n}")
+        return {"forecast_rows": n}
+
     w = extract_next_day()
-    clean_upsert(w)
+    upserted = clean_upsert(w)
+    upserted >> forecast_refresh()
 
 
 nem_operational_daily()

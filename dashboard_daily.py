@@ -83,7 +83,7 @@ st.markdown(
     f"""
 <div class="nem-card">
   <div class="nem-title">⚡ NEM Operational / Daily</div>
-  <div class="nem-sub">Short-term ops · actuals · ~12 hour forecasts · incremental load ·
+  <div class="nem-sub">Short-term ops · actuals · ~1 day forecasts · incremental load ·
   {datetime.utcnow().strftime("%Y-%m-%d %H:%M")} UTC</div>
 </div>
 """,
@@ -219,7 +219,7 @@ with c3:
 
 with c4:
     st.markdown('<div class="nem-card">', unsafe_allow_html=True)
-    st.markdown("**~12 hour forecasts (latest run)**")
+    st.markdown("**~1 day forecasts (latest run)**")
     if forecasts is None or forecasts.empty:
         st.info("No forecasts in datamart.dm_forecasts yet — run train after strategic/daily load.")
     else:

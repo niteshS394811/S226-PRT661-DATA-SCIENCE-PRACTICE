@@ -62,7 +62,7 @@ def run(
     skip_extract: bool = False,
     start: str | None = None,
     end: str | None = None,
-    retrain: bool = False,
+    retrain: bool = True,
 ):
     print("=" * 60)
     print("OPERATIONAL / DAILY load (same pipeline)")
@@ -113,9 +113,11 @@ def run(
     print(f"  daily upserted={len(daily):,} monthly={len(monthly):,}")
 
     if retrain:
-        print("\n[6] Retrain short-term (~1h) models")
+        print("\n[6] Refresh short-horizon forecasts (default after daily load)")
         _, forecasts = train_and_forecast()
         print(f"  forecasts={0 if forecasts is None else len(forecasts)}")
+    else:
+        print("\n[6] Forecast refresh skipped (--no-retrain)")
 
     print("\nOperational/daily pipeline complete.")
 
@@ -132,9 +134,20 @@ if __name__ == "__main__":
         action="store_true",
         help=f"Shorthand for --start {DEFAULT_OPS_START} --end {DEFAULT_OPS_END} --retrain",
     )
-    p.add_argument("--retrain", action="store_true", help="Refresh ~1h forecasts after load")
+    p.add_argument(
+        "--retrain",
+        action="store_true",
+        default=True,
+        help="Refresh ~1h forecasts after load (default: on)",
+    )
+    p.add_argument(
+        "--no-retrain",
+        action="store_true",
+        help="Skip model/forecast refresh after load",
+    )
     args = p.parse_args()
-    start, end, retrain = args.start, args.end, args.retrain
+    start, end = args.start, args.end
+    retrain = not args.no_retrain
     if args.seed_ops_week:
         start = start or DEFAULT_OPS_START
         end = end or DEFAULT_OPS_END

@@ -53,7 +53,8 @@ FEATURE_COLS = [
     "netinterchange",
     "netinterchange_lag_1",
 ]
-HORIZON_STEPS = 12  # ~1 hour at 5-min grain
+#HORIZON_STEPS = 12  # ~1 hour at 5-min grain
+HORIZON_STEPS = 288  # ~1 day at 5-min grain
 PRIMARY_MODEL = "HistGB"
 
 
